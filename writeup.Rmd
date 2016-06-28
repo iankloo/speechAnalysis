@@ -1,0 +1,166 @@
+---
+title: "Are our presidential candidates smarter than a 5th grader?"
+author: "Ian Kloo"
+date: "June 28, 2016"
+output: dscoemarkdown::dscoe
+---
+
+### Introduction
+
+With all of the presidential debates just finishing for the primaries and the rep/dem debates just ramping up, I thought it would be interesting to take a look at the debates using some text analytics.  The first method that came to mind is the "grade level" of different candidates' speech patterns.  The hypothesis is that some candidates use a much simpler vocabulary than the others.  I will leave this to you to hypothesize whether or not this translates into intelligence.
+
+I wrote this code to be easily repeatable - so that new debates could quickly be added.  I hope to build up some other text analytic modules that move beyond the grade level soon. It would be interesting to have a way to do quick turn text analytics for public speeches.
+
+### What does "grade level" mean?
+
+I expect everyone has encountered some claim that someone reads at an n-grade level, but I had never really tried to figure out what that means.  There are a few different ways to determine grade level of text/speech - I chose to go with the Flesch–Kincaid readability score.
+
+While this score is usually used for written text, the authors also noted that their scale was applicable to spoken language as well.  For example, the 6th grade answer is considered regular conversational english.  I expect that spoken language is typically much simpler than written language, so I am not really arguing that these politicians are truely as smart as 5th graders.  I do think this is an intersting way to compare the vocabularies used by different candidates.
+
+### Step 1: Get debate files
+
+I used a few different scraping techniques to grab the debate files, but I won't bog this analysis down with this step.
+
+The end result should be a folder full of text files holding the raw text of the debates.  The naming convention should be "PARTYmmddyyyy.txt".  For example, the republican debate on 1/14/2016 is named: "rep01142016".
+
+### Step 2: Setup
+
+First, setup libraries and set the working directory to the place where the debate files are held.
+
+```{r}
+library(koRpus)
+library(stringr)
+library(rCharts)
+
+setwd("/home/ian/Desktop/speechAnalysis")
+```
+
+Then, create a vector holding all of the files names.  My scraping process created some junk files in my directory that I removed with regular expressions.  It might also be good to check for empty files up front.
+
+```{r}
+files <- list.files('debates')
+files <- gsub('~', '\\1', files)
+
+files
+```
+
+Next, add the republican and democratic candidates who you are interested in analyzing:
+
+```{r}
+reps <- c("TRUMP", "CRUZ", "BUSH", "RUBIO")
+dems <- c("CLINTON", "SANDERS")
+```
+
+For simplicity later, make a data frame with the candidates' names and party:
+
+```{r}
+candidates <- data.frame(name=c(reps, dems), stringsAsFactors=FALSE)
+candidates$party <- ''
+for(i in 1:nrow(candidates)) {
+  if(candidates$name[i] %in% reps){
+    candidates$party[i] <- 'rep'
+  } else{
+    candidates$party[i] <- 'dem'
+  }
+}
+
+candidates
+```
+
+### Step 3: Sepearate out each candidate's part from each debate
+
+As you might expect from the repeated use of "each" above, here come some for-loops!
+
+It may not be a popular opinion, but I like to write in for-loops in R. I think it makes for easily readable/debuggable code.  I also think that it makes things much easier to parallelize using doSNOW and other packages.  I guess this disclaimer is here to say: yes, I know about the apply() family (and can write code with them), but have made a choice to go with the for-loop here.
+
+Here is the logic:
+For each candidate
+  For each debate that candidate participated in
+    Read in the debate raw text
+    Split the raw text into single words
+    Find the start and end points (where the candidate starts and stops speaking)
+    Generate a list of statements by the candidate
+    Combine those statements into a single vector
+    Run the Flesch Kincaid algorithm
+    Store the results in the final data frame
+  Repeat until no debates remain
+Repeat until no candidates remain
+
+```{r, eval=FALSE}
+finalDF <- data.frame(date=character(), party=character(), candidate=character(), grade=numeric(), age=numeric(), stringsAsFactors=FALSE)
+for(i in 1:nrow(candidates)) {
+  tempCandidate <- candidates$name[i]
+  tempDebate <- files[grep(candidates$party[i], files)]
+  
+  for(j in 1:length(tempDebate)){
+    debate <- readLines(tempDebate[j])
+    split <- unlist(strsplit(debate, split = ' '))
+    
+    startTerms <- grep(paste(tempCandidate, ':', sep=''), split)
+    start <- numeric()
+    end <- numeric()
+    statements <- character()
+    if(length(startTerms > 0)){
+      for(k in 1:length(startTerms)){
+        start <- startTerms[k]
+        newSplit <- split[startTerms[k]:length(split)]
+        end <- start + grep('[A-Z]+\\:', newSplit[2:length(newSplit)])[1] - 1
+        if(is.na(end)) {
+          statements <- c(statements, split[start:length(split)])
+        } else{
+          statements <- c(statements, split[start:end])
+        }
+      }
+      statements <- gsub(paste(tempCandidate, ':', sep=''), '\\1', statements)
+      
+      debate <- tokenize(statements, format='obj', lang='en')
+      model <- flesch.kincaid(debate)
+      modelDF <- data.frame(model@Flesch.Kincaid)
+      
+      temp <- data.frame(date = as.Date(str_sub(tempDebate[j],4), '%m%d%Y'), party = candidates$party[i], candidate=tempCandidate, grade=modelDF[1,2], age=modelDF[1,3], stringsAsFactors=FALSE)
+      
+      finalDF <- rbind(finalDF, temp)
+    }
+  }
+}
+```
+
+```{r, echo=FALSE}
+setwd("/home/ian/Desktop/speechAnalysis/debates")
+
+finalDF <- read.csv('test.csv', stringsAsFactors=FALSE)
+finalDF$date <- as.Date(finalDF$date)
+```
+
+Now, lets look at the final results:
+```{r}
+finalDF
+```
+
+### Step 4: Visualize
+
+I decided to use my fallback here for visualization with R: rCharts.  If you aren't familiar with the library, it is really a framework that lets you write interactive javascript visualizations without having to know javascript. It helps to know some javascript for customization.
+
+I went with a scatterplot:
+
+```{r, echo=FALSE, cache=T, results='asis', comment=NA}
+plot <- nPlot(grade ~ date, group =  'candidate', data = finalDF, 
+              type = 'scatterChart', id = 'chart'
+)
+plot$chart(sizeRange = c(200,200))
+plot$chart(color = c('#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33'))
+plot$chart(forceY = c(0, 10))
+plot$chart(tooltipContent = "#! function(d){ 
+  return d
+} !#")
+plot$xAxis(axisLabel='Date',
+  tickFormat =   "#!
+      function(d) {return d3.time.format('%Y-%m-%d')(new Date(d * 86400000 + 86400000));}
+    !#"
+)
+plot$yAxis(axisLabel='Grade Level')
+plot$chart(margin = list(right = 50))
+plot$print('chart2', include_assets=T)
+```
+
+Stay tuned for more!
