@@ -2,8 +2,23 @@
 title: "Are our presidential candidates smarter than a 5th grader?"
 author: "Ian Kloo"
 date: "June 28, 2016"
-output: dscoemarkdown::dscoe
+output: 
+  html_document:
+    css: /home/ian/Documents/dscoeMarkdownNoLogo.css
 ---
+
+```{r, fig.width=10, echo=FALSE, message=F, warning=F}
+library(plotly)
+setwd("/home/ian/Desktop/speechAnalysis/debates")
+
+finalDF <- read.csv('test.csv', stringsAsFactors=FALSE)
+finalDF$date <- as.Date(finalDF$date)
+finalDF <- finalDF[order(finalDF$date),]
+
+plot_ly(data=finalDF, x=date, y=grade, group=candidate, marker=list(size=10)) %>%
+  layout(yaxis = list(range = c(0, 10)))
+
+```
 
 ### Introduction
 
@@ -30,7 +45,7 @@ First, setup libraries and set the working directory to the place where the deba
 ```{r}
 library(koRpus)
 library(stringr)
-library(rCharts)
+library(plotly)
 
 setwd("/home/ian/Desktop/speechAnalysis")
 ```
@@ -143,24 +158,15 @@ I decided to use my fallback here for visualization with R: rCharts.  If you are
 
 I went with a scatterplot:
 
-```{r, cache=T, results='asis', comment=NA}
-plot <- nPlot(grade ~ date, group =  'candidate', data = finalDF, 
-              type = 'scatterChart', id = 'chart'
-)
-plot$chart(sizeRange = c(200,200))
-plot$chart(color = c('#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33'))
-plot$chart(forceY = c(0, 10))
-plot$chart(tooltipContent = "#! function(d){ 
-  return d
-} !#")
-plot$xAxis(axisLabel='Date',
-  tickFormat =   "#!
-      function(d) {return d3.time.format('%Y-%m-%d')(new Date(d * 86400000 + 86400000));}
-    !#"
-)
-plot$yAxis(axisLabel='Grade Level')
-plot$chart(margin = list(right = 50))
-plot$print('chart2', include_assets=T)
-```
+```{r, fig.width=10, echo=FALSE, message=F, warning=F}
+library(plotly)
+setwd("/home/ian/Desktop/speechAnalysis/debates")
 
+finalDF <- read.csv('test.csv', stringsAsFactors=FALSE)
+finalDF$date <- as.Date(finalDF$date)
+finalDF <- finalDF[order(finalDF$date),]
+
+plot_ly(data=finalDF, x=date, y=grade, group=candidate, marker=list(size=10)) %>%
+  layout(yaxis = list(range = c(0, 10)))
+```
 Stay tuned for more!
